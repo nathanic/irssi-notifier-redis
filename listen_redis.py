@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import sys
 import redis
+import time
 from PyQt4 import QtGui
 from PyQt4.QtCore import *
 
@@ -10,21 +11,24 @@ import config
 # TODO: better icons (these were lifted from KDE4 Oxygen theme)
 IDLE_ICON="idle.png"
 MESSAGE_ICON="message.png"
+ERROR_ICON="error.png"
 # TODO: error icon for connection troubles
 
 # how long to show the message bubble
-MESSAGE_TIMEOUT=1000
+MESSAGE_TIMEOUT=1000 # ms
+RECONNECT_DELAY=10.0 # sec
 
 class ListenThread(QThread):
     new_message = pyqtSignal(str,str,name='newMessage')
     clear = pyqtSignal(name='clear')
+    error = pyqtSignal(name='error')
 
     def __init__(self):
         print "in other thread"
         QThread.__init__(self)
         # self.setDaemon(False)
 
-    def run(self):
+    def listen(self):
         print "connecting to redis..."
         # TODO: use paramiko or shell out to ssh to establish tunnel?
         r = redis.StrictRedis(
@@ -35,6 +39,8 @@ class ListenThread(QThread):
             )
         ps = r.pubsub()
         ps.subscribe(['irssi'])
+
+        self.clear.emit() # clear any error state due to successful conn
 
         print "subscribing to irssi topic on redis"
         for item in ps.listen():
@@ -48,17 +54,24 @@ class ListenThread(QThread):
                     self.clear.emit()
                 elif len(msg[2]) > 0:
                     self.new_message.emit(msg[0], msg[2])
-        # TODO: catch redis.exceptions.ConnectionError and retry
+
+    def run(self):
+        while True:
+            try:
+                self.listen()
+            except redis.exceptions.ConnectionError, e:
+                print "Caught exception:", e
+                self.error.emit()
+                print "Waiting for a bit and trying again"
+                time.sleep(RECONNECT_DELAY)
 
 class SystemTrayIcon(QtGui.QSystemTrayIcon):
-    def __init__(self, idle_icon, message_icon, parent=None):
+    def __init__(self, idle_icon, message_icon, error_icon, parent=None):
         self.idle_icon = idle_icon
         self.message_icon = message_icon
+        self.error_icon = error_icon
 
         QtGui.QSystemTrayIcon.__init__(self, idle_icon, parent)
-
-        self.setToolTip("Listening for irssi redis events on " \
-                + config.redis['server'] + ":" + str(config.redis['port']))
 
         menu = QtGui.QMenu(parent)
         exitAction = menu.addAction("Exit").triggered.connect(self.onExit)
@@ -70,6 +83,7 @@ class SystemTrayIcon(QtGui.QSystemTrayIcon):
         self.listenThread = ListenThread()
         self.listenThread.new_message.connect(self.onNotify)
         self.listenThread.clear.connect(self.onClear)
+        self.listenThread.error.connect(self.onError)
         self.listenThread.start()
 
     def onActivated(self, reason):
@@ -77,11 +91,19 @@ class SystemTrayIcon(QtGui.QSystemTrayIcon):
             print "clearing because left click"
             self.onClear()
 
+    def onError(self):
+        self.setToolTip("Error connectiong to " \
+                + config.redis['server'] + ":" + str(config.redis['port']))
+        self.setIcon(self.error_icon)
+
     def onClear(self):
+        self.setToolTip("Listening for irssi redis events on " \
+                + config.redis['server'] + ":" + str(config.redis['port']))
         self.setIcon(self.idle_icon)
 
     def onNotify(self, channel, msg):
-        # change tool tip?
+        self.setToolTip("New event from " \
+                + config.redis['server'] + ":" + str(config.redis['port']))
         self.setIcon(self.message_icon)
         self.showMessage(channel, msg, QtGui.QSystemTrayIcon.NoIcon, MESSAGE_TIMEOUT)
 
@@ -93,7 +115,11 @@ class SystemTrayIcon(QtGui.QSystemTrayIcon):
 def main():
     app = QtGui.QApplication(sys.argv)
     w = QtGui.QWidget()
-    trayIcon = SystemTrayIcon(QtGui.QIcon(IDLE_ICON), QtGui.QIcon(MESSAGE_ICON), w)
+    trayIcon = SystemTrayIcon(
+            QtGui.QIcon(IDLE_ICON),
+            QtGui.QIcon(MESSAGE_ICON),
+            QtGui.QIcon(ERROR_ICON),
+            w)
     trayIcon.show()
     sys.exit(app.exec_())
 

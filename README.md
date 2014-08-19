@@ -1,9 +1,11 @@
-Irssi Notifier Using Redis
-==========================
+Irssi Notifier Using Redis and PyQt4
+====================================
 *Running irssi on a remote server and want to receive notifications on your local computer?*
 
-This irssi notifier uses Redis to connect your local computer to your remote irssi.
-Notifications will be displayed using the Freedesktop Notifications, meaning you'll see a nice notification bubble when you're on Ubuntu.
+This irssi notifier uses Redis to connect your local computer to your remote
+irssi. Notifications will be displayed using a system tray icon.  If you click
+the tray icon, or even enter a keypress in irssi, the notification state will
+be cleared out.
 
 Install
 =======
@@ -31,6 +33,4 @@ Security
 ========
 Don't forget to secure your server and enable the requirepass option in your redis.conf.
 
-
-[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/TrafeX/irssi-notifier-redis/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
 
