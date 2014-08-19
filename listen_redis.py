@@ -1,89 +1,98 @@
-#!/usr/bin/env python
-#
-# Irssi notifier using Redis
-#
-# Copyright (c) 2012, Tim de Pater <code AT trafex DOT nl>
-# <https://github.com/TrafeX/irssi-notifier-redis>
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
-#
 import sys
-import dbus
 import redis
-import threading
+from PyQt4 import QtGui
+from PyQt4.QtCore import *
+
+# local config file
 import config
 
-class ListenThread(threading.Thread):
+# TODO: better icons (these were lifted from KDE4 Oxygen theme)
+IDLE_ICON="idle.png"
+MESSAGE_ICON="message.png"
+
+# how long to show the message bubble
+MESSAGE_TIMEOUT=1000
+
+class ListenThread(QThread):
+    new_message = pyqtSignal(str,str,name='newMessage')
+    clear = pyqtSignal(name='clear')
+
     def __init__(self):
-        self.bus = False
-        self.notifyservice = False
-        self.notifyid = 0
-        threading.Thread.__init__(self)
-        self.setDaemon(False)
+        print "in other thread"
+        QThread.__init__(self)
+        # self.setDaemon(False)
 
     def run(self):
-        print threading.currentThread().getName(), 'Starting'
+        print "connecting to redis..."
+        # TODO: use paramiko or shell out to ssh to establish tunnel?
         r = redis.StrictRedis(
                 host=config.redis['server'],
                 port=config.redis['port'],
                 password=config.redis['password'],
                 db=0
             )
-
         ps = r.pubsub()
         ps.subscribe(['irssi'])
 
+        print "subscribing to irssi topic on redis"
         for item in ps.listen():
             print item
             msg = str(item['data']).partition('  ')
-            if item['type'] == 'message' and len(msg[2]) > 0:
-                self.notify(msg[0], msg[2])
-        print threading.currentThread().getName(), 'Exiting'
+            print "PIECES: ", msg
+            if item['type'] == 'message':
+                if msg[0] == '__CLEAR__':
+                    # my irssi script sends this special __CLEAR__ code
+                    # when there's a keypress in irssi since last message posted
+                    self.clear.emit()
+                elif len(msg[2]) > 0:
+                    self.new_message.emit(msg[0], msg[2])
 
-    def notify(self, channel, msg):
-        self.bus = dbus.Bus(dbus.Bus.TYPE_SESSION)
-        # Connect to notification interface on DBUS.
-        self.notifyservice = self.bus.get_object(
-            'org.freedesktop.Notifications',
-            '/org/freedesktop/Notifications'
-        )
-        self.notifyservice = dbus.Interface(
-            self.notifyservice,
-            "org.freedesktop.Notifications"
-        )
-        # The second param is the replace id, so get the notify id back,
-        # store it, and send it as the replacement on the next call.
-        self.notifyservice.Notify(
-            "Irssi-notify",
-            self.notifyid,
-            sys.path[0] + "/icon-irc.png",
-            channel,
-            msg,
-            [],
-            {},
-            5000
-        )
+class SystemTrayIcon(QtGui.QSystemTrayIcon):
+    def __init__(self, idle_icon, message_icon, parent=None):
+        self.idle_icon = idle_icon
+        self.message_icon = message_icon
+
+        QtGui.QSystemTrayIcon.__init__(self, idle_icon, parent)
+
+        self.setToolTip("Listening for irssi redis events on " \
+                + config.redis['server'] + ":" + str(config.redis['port']))
+
+        menu = QtGui.QMenu(parent)
+        exitAction = menu.addAction("Exit").triggered.connect(self.onExit)
+        self.setContextMenu(menu)
+
+        self.activated.connect(self.onActivated)
+        self.messageClicked.connect(self.onClear)
+
+        self.listenThread = ListenThread()
+        self.listenThread.new_message.connect(self.onNotify)
+        self.listenThread.clear.connect(self.onClear)
+        self.listenThread.start()
+
+    def onActivated(self, reason):
+        if reason == QtGui.QSystemTrayIcon.Trigger:
+            print "clearing because left click"
+            self.onClear()
+
+    def onClear(self):
+        self.setIcon(self.idle_icon)
+
+    def onNotify(self, channel, msg):
+        # change tool tip?
+        self.setIcon(self.message_icon)
+        self.showMessage(channel, msg, QtGui.QSystemTrayIcon.NoIcon, MESSAGE_TIMEOUT)
+
+    def onExit(self):
+        print "exiting because menu"
+        sys.exit(1)
+
+
+def main():
+    app = QtGui.QApplication(sys.argv)
+    w = QtGui.QWidget()
+    trayIcon = SystemTrayIcon(QtGui.QIcon(IDLE_ICON), QtGui.QIcon(MESSAGE_ICON), w)
+    trayIcon.show()
+    sys.exit(app.exec_())
 
 if __name__ == '__main__':
-    try:
-        thread = ListenThread()
-        thread.start();
-
-    except ValueError as strerror:
-        print strerror
-    except KeyboardInterrupt:
-        print "\nStopping monitor..\n"
-        sys.exit(0)
-    except:
-        raise
+    main()
