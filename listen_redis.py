@@ -12,7 +12,6 @@ import config
 IDLE_ICON="idle.png"
 MESSAGE_ICON="message.png"
 ERROR_ICON="error.png"
-# TODO: error icon for connection troubles
 
 # how long to show the message bubble
 MESSAGE_TIMEOUT=1000 # ms
