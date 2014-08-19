@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import sys
 import redis
 from PyQt4 import QtGui
@@ -9,6 +10,7 @@ import config
 # TODO: better icons (these were lifted from KDE4 Oxygen theme)
 IDLE_ICON="idle.png"
 MESSAGE_ICON="message.png"
+# TODO: error icon for connection troubles
 
 # how long to show the message bubble
 MESSAGE_TIMEOUT=1000
@@ -46,6 +48,7 @@ class ListenThread(QThread):
                     self.clear.emit()
                 elif len(msg[2]) > 0:
                     self.new_message.emit(msg[0], msg[2])
+        # TODO: catch redis.exceptions.ConnectionError and retry
 
 class SystemTrayIcon(QtGui.QSystemTrayIcon):
     def __init__(self, idle_icon, message_icon, parent=None):
