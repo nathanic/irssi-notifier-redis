@@ -14,7 +14,7 @@ MESSAGE_ICON="message.png"
 ERROR_ICON="error.png"
 
 # how long to show the message bubble
-MESSAGE_TIMEOUT=1000 # ms
+MESSAGE_TIMEOUT=2000 # ms
 RECONNECT_DELAY=10.0 # sec
 
 class ListenThread(QThread):
