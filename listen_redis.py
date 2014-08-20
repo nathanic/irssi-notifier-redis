@@ -15,21 +15,21 @@ ERROR_ICON="error.png"
 
 # how long to show the message bubble
 MESSAGE_TIMEOUT=2000 # ms
-RECONNECT_DELAY=10.0 # sec
+RECONNECT_DELAY=10000 # ms
+
+def servername():
+    return config.redis['server'] + ":" + str(config.redis['port'])
 
 class ListenThread(QThread):
     new_message = pyqtSignal(str,str,name='newMessage')
-    clear = pyqtSignal(name='clear')
-    error = pyqtSignal(name='error')
+    clear       = pyqtSignal(name='clear')
+    error       = pyqtSignal(name='error')
 
     def __init__(self):
-        print "in other thread"
         QThread.__init__(self)
-        # self.setDaemon(False)
 
     def listen(self):
-        print "connecting to redis..."
-        # TODO: use paramiko or shell out to ssh to establish tunnel?
+        print "connecting to redis at", servername()
         r = redis.StrictRedis(
                 host=config.redis['server'],
                 port=config.redis['port'],
@@ -41,11 +41,9 @@ class ListenThread(QThread):
 
         self.clear.emit() # clear any error state due to successful conn
 
-        print "subscribing to irssi topic on redis"
         for item in ps.listen():
             print item
             msg = str(item['data']).partition('  ')
-            print "PIECES: ", msg
             if item['type'] == 'message':
                 if msg[0] == '__CLEAR__':
                     # my irssi script sends this special __CLEAR__ code
@@ -62,10 +60,13 @@ class ListenThread(QThread):
                 print "Caught exception:", e
                 self.error.emit()
                 print "Waiting for a bit and trying again"
-                time.sleep(RECONNECT_DELAY)
+                time.sleep(RECONNECT_DELAY * 1000.0)
+
 
 class SystemTrayIcon(QtGui.QSystemTrayIcon):
     def __init__(self, idle_icon, message_icon, error_icon, parent=None):
+        self.notifications = 0
+
         self.idle_icon = idle_icon
         self.message_icon = message_icon
         self.error_icon = error_icon
@@ -87,27 +88,28 @@ class SystemTrayIcon(QtGui.QSystemTrayIcon):
 
     def onActivated(self, reason):
         if reason == QtGui.QSystemTrayIcon.Trigger:
-            print "clearing because left click"
             self.onClear()
 
     def onError(self):
-        self.setToolTip("Error connectiong to " \
-                + config.redis['server'] + ":" + str(config.redis['port']))
+        self.setToolTip("Error connectiong to " + servername())
         self.setIcon(self.error_icon)
 
     def onClear(self):
+        self.notifications = 0
         self.setToolTip("Listening for irssi redis events on " \
                 + config.redis['server'] + ":" + str(config.redis['port']))
         self.setIcon(self.idle_icon)
 
     def onNotify(self, channel, msg):
-        self.setToolTip("New event from " \
-                + config.redis['server'] + ":" + str(config.redis['port']))
+        self.notifications += 1
+        if self.notifications == 1:
+            self.setToolTip("New event from " + servername())
+        else:
+            self.setToolTip("%d new events from %s" % (self.notifications, servername()))
         self.setIcon(self.message_icon)
         self.showMessage(channel, msg, QtGui.QSystemTrayIcon.NoIcon, MESSAGE_TIMEOUT)
 
     def onExit(self):
-        print "exiting because menu"
         sys.exit(1)
 
 
