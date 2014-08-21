@@ -60,18 +60,19 @@ class ListenThread(QThread):
                 print "Caught exception:", e
                 self.error.emit()
                 print "Waiting for a bit and trying again"
-                time.sleep(RECONNECT_DELAY * 1000.0)
+                time.sleep(RECONNECT_DELAY / 1000.0)
 
 
 class SystemTrayIcon(QtGui.QSystemTrayIcon):
     def __init__(self, idle_icon, message_icon, error_icon, parent=None):
         self.notifications = 0
+        self.error = True
 
         self.idle_icon = idle_icon
         self.message_icon = message_icon
         self.error_icon = error_icon
 
-        QtGui.QSystemTrayIcon.__init__(self, idle_icon, parent)
+        QtGui.QSystemTrayIcon.__init__(self, error_icon, parent)
 
         menu = QtGui.QMenu(parent)
         exitAction = menu.addAction("Exit").triggered.connect(self.onExit)
@@ -88,14 +89,17 @@ class SystemTrayIcon(QtGui.QSystemTrayIcon):
 
     def onActivated(self, reason):
         if reason == QtGui.QSystemTrayIcon.Trigger:
-            self.onClear()
+            if not self.error:
+                self.onClear()
 
     def onError(self):
         self.setToolTip("Error connectiong to " + servername())
         self.setIcon(self.error_icon)
+        self.error = True
 
     def onClear(self):
         self.notifications = 0
+        self.error = False
         self.setToolTip("Listening for irssi redis events on " \
                 + config.redis['server'] + ":" + str(config.redis['port']))
         self.setIcon(self.idle_icon)
