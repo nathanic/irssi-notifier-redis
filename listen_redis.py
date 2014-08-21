@@ -14,8 +14,8 @@ MESSAGE_ICON="message.png"
 ERROR_ICON="error.png"
 
 # how long to show the message bubble
-MESSAGE_TIMEOUT=2000 # ms
-RECONNECT_DELAY=10000 # ms
+MESSAGE_TIMEOUT=4 * 1000 # msec
+RECONNECT_DELAY=10.0     # sec
 
 def servername():
     return config.redis['server'] + ":" + str(config.redis['port'])
@@ -60,7 +60,7 @@ class ListenThread(QThread):
                 print "Caught exception:", e
                 self.error.emit()
                 print "Waiting for a bit and trying again"
-                time.sleep(RECONNECT_DELAY / 1000.0)
+                time.sleep(RECONNECT_DELAY)
 
 
 class SystemTrayIcon(QtGui.QSystemTrayIcon):
