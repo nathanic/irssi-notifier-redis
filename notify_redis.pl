@@ -36,13 +36,17 @@ $VERSION = "1.00";
 
 my $need_to_clear = 0;
 
+# redis irssi topic "protocol"
+# COMMAND\tnetwork\tnick\tmessage
+# COMMAND is one of PRIVMSG, HILIGHT, CLEAR
+
 sub priv_msg {
     my ($server,$msg,$nick,$address,$target) = @_;
     $msg =~ s/[^a-zA-Z0-9 .,!?\@:\/\>\=]//g;
 
     # my $redis = Redis->new(server => 'localhost:6379', password => false);
     my $redis = Redis->new(server => 'localhost:6379', password => 0);
-    $redis->publish('irssi', "privmsg ($server->{tag})  $nick: $msg");
+    $redis->publish('irssi', "PRIVMSG\t$server->{tag}\t$nick\t$msg");
     $need_to_clear = 1;
 }
 
@@ -55,7 +59,8 @@ sub notify {
     $stripped =~ s/[^a-zA-Z0-9 .,!?\@:\/\>\=]//g;
 
     my $redis = Redis->new(server => 'localhost:6379');
-    $redis->publish('irssi', "$dest->{target} $stripped");
+    # $redis->publish('irssi', "$dest->{target} $stripped");
+    $redis->publish('irssi', "HILIGHT\t$server->{tag}\t$dest->{target}\t$stripped");
     $need_to_clear = 1;
 }
 
@@ -66,7 +71,7 @@ sub keypress {
         # if there is a new keypress since the last notification we sent
         # clear out any waiting notifications
         my $redis = Redis->new(server => 'localhost:6379');
-        $redis->publish('irssi', "__CLEAR__");
+        $redis->publish('irssi', "CLEAR");
         $need_to_clear = 0;
     }
 }

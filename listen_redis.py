@@ -21,7 +21,9 @@ def servername():
     return config.redis['server'] + ":" + str(config.redis['port'])
 
 class ListenThread(QThread):
-    new_message = pyqtSignal(str,str,name='newMessage')
+    # how to make a signal take a list of strings?
+    # new_message = pyqtSignal(str,str,name='newMessage')
+    new_message = pyqtSignal(list,name='newMessage')
     clear       = pyqtSignal(name='clear')
     error       = pyqtSignal(name='error')
 
@@ -43,14 +45,14 @@ class ListenThread(QThread):
 
         for item in ps.listen():
             print item
-            msg = str(item['data']).partition('  ')
             if item['type'] == 'message':
-                if msg[0] == '__CLEAR__':
-                    # my irssi script sends this special __CLEAR__ code
-                    # when there's a keypress in irssi since last message posted
+                parts = str(item['data']).split("\t", 3)
+                if parts[0] == 'CLEAR':
                     self.clear.emit()
-                elif len(msg[2]) > 0:
-                    self.new_message.emit(msg[0], msg[2])
+                elif len(parts) == 4:
+                    self.new_message.emit(parts)
+                else:
+                    print "malformed message: ", parts
 
     def run(self):
         while True:
@@ -65,7 +67,7 @@ class ListenThread(QThread):
 
 class SystemTrayIcon(QtGui.QSystemTrayIcon):
     def __init__(self, idle_icon, message_icon, error_icon, parent=None):
-        self.notifications = 0
+        self.notifications = []
         self.error = True
 
         self.idle_icon = idle_icon
@@ -98,18 +100,25 @@ class SystemTrayIcon(QtGui.QSystemTrayIcon):
         self.error = True
 
     def onClear(self):
-        self.notifications = 0
+        self.notifications = []
         self.error = False
         self.setToolTip("Listening for irssi redis events on " \
                 + config.redis['server'] + ":" + str(config.redis['port']))
         self.setIcon(self.idle_icon)
 
-    def onNotify(self, channel, msg):
-        self.notifications += 1
-        if self.notifications == 1:
-            self.setToolTip("New event from " + servername())
+    def onNotify(self, parts):
+        cmd, network, channel, msg = parts
+        # might want to change the protocol to send
+        # cmd\tnick\tmsg
+        self.notifications.append( parts )
+        if len(self.notifications) == 1:
+            events = "New event"
         else:
-            self.setToolTip("%d new events from %s" % (self.notifications, servername()))
+            events = "%d new events" % len(self.notifications)
+        chans = list( set( (notifo[2] for notifo in self.notifications) ) )
+        if len(chans) == 1:
+            chans = chans[0]
+        self.setToolTip("%s from %s on %s" % (events, chans, servername()))
         self.setIcon(self.message_icon)
         self.showMessage(channel, msg, QtGui.QSystemTrayIcon.NoIcon, MESSAGE_TIMEOUT)
 
